@@ -6,7 +6,7 @@
       "InstanceType": {
         "Type": "String",
         "Default": "t2.micro",
-        "AllowedValues" : ["t2.micro", "t2.small", "t2.medium"],
+        "AllowedValues" : ["t2.micro", "t2.small"],
         "Description" : "Enter the instance type (t2.micro, t2.small, or t2.medium)."
       },
       "KeyPair": {
@@ -54,7 +54,7 @@
         "Properties": {}
       },
   
-      "AttachGateway": {
+      "VPCGatewayAttachment": {
         "Type": "AWS::EC2::VPCGatewayAttachment",
         "Properties": {
           "VpcId": { "Ref": "EngineeringVpc" },
@@ -62,7 +62,7 @@
         }
       },
   
-      "RouteTable": {
+      "PublicRouteTable": {
         "Type": "AWS::EC2::RouteTable",
         "Properties": {
           "VpcId": { "Ref": "EngineeringVpc" }
@@ -71,14 +71,46 @@
   
       "PublicRoute": {
         "Type": "AWS::EC2::Route",
-        "DependsOn": "AttachGateway",
+        "DependsOn": "VPCGatewayAttachment",
         "Properties": {
-          "RouteTableId": { "Ref": "RouteTable" },
+          "RouteTableId": { "Ref": "PublicRouteTable" },
           "DestinationCidrBlock": "0.0.0.0/0",
           "GatewayId": { "Ref": "InternetGateway" }
         }
       },
-  
+      "WebInstanceRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+            "AssumeRolePolicyDocument": {
+                "Statement": [
+                    {
+                        "Action": [
+                            "sts:AssumeRole"
+                        ],
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "ec2.amazonaws.com"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "ManagedPolicyArns": [
+                "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+            ]
+        }
+      },
+      "WebInstanceProfile": {
+        "Type": "AWS::IAM::InstanceProfile",
+        "Properties": {
+            "Roles": [
+                {
+                    "Ref": "WebInstanceRole"
+                }
+            ]
+        }
+      },
       "WebserversSG": {
         "Type": "AWS::EC2::SecurityGroup",
         "Properties": {
@@ -126,6 +158,9 @@
           "SecurityGroupIds": [
             { "Fn::GetAtt": ["WebserversSG", "GroupId"] }
           ],
+          "IamInstanceProfile": {
+            "Ref": "WebInstanceProfile"
+          },
           "Tags": [
             { "Key": "Name", "Value": "web1" }
           ]
@@ -157,6 +192,9 @@
           "SecurityGroupIds": [
             { "Fn::GetAtt": ["WebserversSG", "GroupId"] }
           ],
+          "IamInstanceProfile": {
+            "Ref": "WebInstanceProfile"
+          },
           "Tags": [
             { "Key": "Name", "Value": "web2" }
           ]
