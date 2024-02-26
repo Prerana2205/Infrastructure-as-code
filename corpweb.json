@@ -1,0 +1,243 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates a VPC with subnets, EC2 instances, security group, and Application Load Balancer for Engineering team.",
+  
+    "Parameters": {
+      "InstanceType": {
+        "Type": "String",
+        "Default": "t2.micro",
+        "AllowedValues" : ["t2.micro", "t2.small", "t2.medium"],
+        "Description" : "Enter the instance type (t2.micro, t2.small, or t2.medium)."
+      },
+      "KeyPair": {
+        "Type": "AWS::EC2::KeyPair::KeyName",
+        "Description": "Key pair to SSH into EC2 instances"
+      },
+      "YourIp": {
+        "Type": "String",
+        "Description": "Your public IP address"
+      }
+    },
+  
+    "Resources": {
+      "EngineeringVpc": {
+        "Type": "AWS::EC2::VPC",
+        "Properties": {
+          "CidrBlock": "10.0.0.0/18",
+          "EnableDnsSupport": true,
+          "EnableDnsHostnames": true
+        }
+      },
+  
+      "PublicSubnet1": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "CidrBlock": "10.0.0.0/24",
+          "VpcId": { "Ref": "EngineeringVpc" },
+          "MapPublicIpOnLaunch": true,
+          "AvailabilityZone": "us-east-1a"
+        }
+      },
+  
+      "PublicSubnet2": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "CidrBlock": "10.0.1.0/24",
+          "VpcId": { "Ref": "EngineeringVpc" },
+          "MapPublicIpOnLaunch": true,
+          "AvailabilityZone": "us-east-1b"
+        }
+      },
+  
+      "InternetGateway": {
+        "Type": "AWS::EC2::InternetGateway",
+        "Properties": {}
+      },
+  
+      "AttachGateway": {
+        "Type": "AWS::EC2::VPCGatewayAttachment",
+        "Properties": {
+          "VpcId": { "Ref": "EngineeringVpc" },
+          "InternetGatewayId": { "Ref": "InternetGateway" }
+        }
+      },
+  
+      "RouteTable": {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": { "Ref": "EngineeringVpc" }
+        }
+      },
+  
+      "PublicRoute": {
+        "Type": "AWS::EC2::Route",
+        "DependsOn": "AttachGateway",
+        "Properties": {
+          "RouteTableId": { "Ref": "RouteTable" },
+          "DestinationCidrBlock": "0.0.0.0/0",
+          "GatewayId": { "Ref": "InternetGateway" }
+        }
+      },
+  
+      "WebserversSG": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "Enable SSH and HTTP access",
+          "VpcId": { "Ref": "EngineeringVpc" },
+          "SecurityGroupIngress": [
+            {
+              "IpProtocol": "tcp",
+              "FromPort": 22,
+              "ToPort": 22,
+              "CidrIp": { "Ref": "YourIp" }
+            },
+            {
+              "IpProtocol": "tcp",
+              "FromPort": 80,
+              "ToPort": 80,
+              "CidrIp": "0.0.0.0/0"
+            }
+          ]
+        }
+      },
+  
+      "web1": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+          "InstanceType": { "Ref": "InstanceType" },
+          "KeyName": { "Ref": "KeyPair" },
+          "ImageId": "ami-01cc34ab2709337aa",
+          "SubnetId": { "Ref": "PublicSubnet1" },
+          "UserData": {
+            "Fn::Base64": {
+              "Fn::Join": [
+                "",
+                [
+                  "#!/bin/bash\n",
+                  "yum update -y\n",
+                  "yum install -y git httpd php\n",
+                  "service httpd start\n",
+                  "chkconfig httpd on\n",
+                  "aws s3 cp s3://seis665-public/index.php /var/www/html/\n"
+                ]
+              ]
+            }
+          },
+          "SecurityGroupIds": [
+            { "Fn::GetAtt": ["WebserversSG", "GroupId"] }
+          ],
+          "Tags": [
+            { "Key": "Name", "Value": "web1" }
+          ]
+        }
+      },
+  
+      "web2": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+          "InstanceType": { "Ref": "InstanceType" },
+          "KeyName": { "Ref": "KeyPair" },
+          "ImageId": "ami-01cc34ab2709337aa",
+          "SubnetId": { "Ref": "PublicSubnet2" },
+          "UserData": {
+            "Fn::Base64": {
+              "Fn::Join": [
+                "",
+                [
+                  "#!/bin/bash\n",
+                  "yum update -y\n",
+                  "yum install -y git httpd php\n",
+                  "service httpd start\n",
+                  "chkconfig httpd on\n",
+                  "aws s3 cp s3://seis665-public/index.php /var/www/html/\n"
+                ]
+              ]
+            }
+          },
+          "SecurityGroupIds": [
+            { "Fn::GetAtt": ["WebserversSG", "GroupId"] }
+          ],
+          "Tags": [
+            { "Key": "Name", "Value": "web2" }
+          ]
+        }
+      },
+  
+      "EngineeringLB": {
+        "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+        "Properties": {
+          "Name": "EngineeringLB",
+          "Subnets": [{ "Ref": "PublicSubnet1" }, { "Ref": "PublicSubnet2" }],
+          "SecurityGroups": [{ "Fn::GetAtt": ["WebserversSG", "GroupId"] }],
+          "Scheme": "internet-facing",
+          "Type": "application",
+          "LoadBalancerAttributes": [
+            {
+              "Key": "idle_timeout.timeout_seconds",
+              "Value": "60"
+            }
+          ]
+        }
+      },
+  
+      "EngineeringTargetGroup": {
+        "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+        "Properties": {
+          "Name": "EngineeringWebservers",
+          "Port": 80,
+          "Protocol": "HTTP",
+          "TargetType": "instance",
+          "VpcId": { "Ref": "EngineeringVpc" },
+          "HealthCheckEnabled": true,
+          "HealthCheckIntervalSeconds": 30,
+          "HealthCheckPath": "/",
+          "HealthCheckProtocol": "HTTP",
+          "HealthCheckTimeoutSeconds": 5,
+          "HealthyThresholdCount": 2,
+          "UnhealthyThresholdCount": 2
+        }
+      },
+  
+      "EngineeringLBListener": {
+        "Type": "AWS::ElasticLoadBalancingV2::Listener",
+        "Properties": {
+          "DefaultActions": [
+            {
+              "Type": "forward",
+              "TargetGroupArn": { "Ref": "EngineeringTargetGroup" }
+            }
+          ],
+          "LoadBalancerArn": { "Ref": "EngineeringLB" },
+          "Port": 80,
+          "Protocol": "HTTP"
+        }
+      },
+  
+      "EngineeringLBListenerRule": {
+        "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+        "Properties": {
+          "Actions": [
+            {
+              "TargetGroupArn": { "Ref": "EngineeringTargetGroup" },
+              "Type": "forward"
+            }
+          ],
+          "Conditions": [
+            {
+              "Field": "path-pattern",
+              "Values": ["/*"]
+            }
+          ],
+          "ListenerArn": { "Ref": "EngineeringLBListener" },
+          "Priority": 1
+        }
+      }
+    },
+  
+    "Outputs": {
+      "LoadBalancerDNS": {
+        "Description": "DNS name of the Load Balancer",
+        "Value": { "Fn::GetAtt": ["EngineeringLB", "DNSName"] }
+      }
+    }
+  }
