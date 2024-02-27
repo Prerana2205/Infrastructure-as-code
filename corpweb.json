@@ -7,7 +7,7 @@
         "Type": "String",
         "Default": "t2.micro",
         "AllowedValues" : ["t2.micro", "t2.small"],
-        "Description" : "Enter the instance type (t2.micro, t2.small, or t2.medium)."
+        "Description" : "Enter the instance type (t2.micro or t2.small)."
       },
       "KeyPair": {
         "Type": "AWS::EC2::KeyPair::KeyName",
